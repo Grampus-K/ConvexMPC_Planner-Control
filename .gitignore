@@ -1,0 +1,16 @@
+# ROS
+build/
+devel/
+
+# C++
+*.o
+*.so
+*.a
+
+# 点云/数据
+*.pcd
+*.bag
+
+# 其他
+log/
+*.log
