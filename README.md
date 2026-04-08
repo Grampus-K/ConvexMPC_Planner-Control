@@ -1,151 +1,116 @@
-# IPC
+🎓 复杂环境下四旋翼无人机轨迹规划与跟踪控制
 
-**IPC**: Integrated Planning and Control for Quadrotor Navigation in Presence of Suddenly Appearing Objects and Disturbances
+Ke Yincheng 毕业设计
 
-```
-@article{liu2023integrated,
-  title={Integrated Planning and Control for Quadrotor Navigation in Presence of Suddenly Appearing Objects and Disturbances},
-  author={Liu, Wenyi and Ren, Yunfan and Zhang, Fu},
-  journal={IEEE Robotics and Automation Letters},
-  year={2023},
-  publisher={IEEE}
-}
-```
+本项目基于香港大学 MARS 实验室开源框架 IPC（Integrated Planning and Control） 进行深度优化与二次开发。
 
-## Overview
+通过对底层算法精简、反馈机制重构以及控制接口优化，使系统达到高稳定性、高频率、可实机部署飞行的工程级可用状态。
 
-Author: [Wenyi Liu](https://github.com/FENYUN323), [Yunfan Ren](https://github.com/RENyunfan) and [Fu Zhang](https://www.mech.hku.hk/academic-staff/Zhang-F) from [HKU MARS Lab](https://mars.hku.hk/).
+🌟 核心改进与特性
+1. 算法精简与去噪优化
+移除冗余模块
+删除油门估计（Thrust Estimation）
+删除微分平坦映射（Differential Flatness Mapping）
+👉 降低系统复杂度，提高鲁棒性
+加速度反馈重构（核心改进）
+原问题：直接使用 IMU 加速度 → 噪声极大
+本项目方案：
+使用上一帧 MPC 输出的最优加速度作为反馈
+效果：
+消除高频震荡
+保持闭环一致性
+显著提升控制稳定性
+2. 深度定制的 px4ctrl 飞控接口
+前馈控制优化
+MPC 输出的最优速度 → 直接作为 Feedforward 下发 PX4
+👉 提升轨迹跟踪响应速度
+平滑悬停逻辑（Bug Fix）
+修复原版“急刹车”问题
+新逻辑：
+松杆 → 先发送速度为 0
+实际速度下降到阈值以下
+当前位置设为悬停点
+👉 实现丝滑刹车悬停
+里程计驱动状态机（重要改进）
+移除 Timer 驱动
+全部基于 Odom 反馈驱动状态机
+👉 状态切换更严格、安全
+⚠️ 重要注意事项
+🧭 坐标系转换说明（极其重要）
+MPC 输出
+世界坐标系（World Frame）
+Odom 反馈
+机体坐标系（Body Frame）
+数据流机制
+输入：Body → World（用于 MPC 计算）
+输出：World → Body（发送给 PX4）
+🚨 飞行安全与紧急接管
+最高优先级遥控接管
+无需切换模式
+直接打杆即可强制接管 / 降落
+👉 在 px4ctrl 中具有最高优先级
+🛠️ 安装指南
+1. 安装 MAVROS
+sudo apt-get install ros-noetic-mavros
+sudo apt-get install ros-noetic-mavros-extras
 
-Paper: [Integrated Planning and Control for Quadrotor Navigation in Presence of Suddenly Appearing Objects and Disturbances](https://ieeexplore.ieee.org/abstract/document/10238764)
+cd /opt/ros/noetic/lib/mavros
+sudo ./install_geographiclib_datasets.sh
+2. 安装 IPC 依赖
 
-Or see the pdf at:  [liu2023ipc.pdf](paper/liu2023ipc.pdf) 
+👉 原项目仓库：
+https://github.com/hku-mars/IPC
 
-Code: [Github](https://github.com/hku-mars/IPC)
+3. 安装 FAST-LIO2 与 Mid-360 驱动
 
-Video Links: [youtube](https://www.youtube.com/watch?v=EZFxTkqqat4), [Bilibili](https://www.bilibili.com/video/BV1NM4y117TH)
+👉 配置教程：
+https://blog.csdn.net/m0_55117804/article/details/142644882
 
-Click for the video demo.
+4. 编译工程
 
-[![Video Demo](./IPC/img/out.png)](https://www.youtube.com/watch?v=EZFxTkqqat4)
+💡 重要提示：首次编译需先编译 fast_lio 相关包
 
-## 1 About IPC
-
-The **IPC** is an integrated planning and control framework for quadrotors.
-
-The **IPC's characteristic**:
-
-* Safety (Using safe flight corridor as hard constraints)
-* Low latency (Can run at 100Hz)
-* Strong disturbance rejection capability
-
-Using **IPC**, the quadrotor can:
-
-* Avoid suddenly appearing object
-* Fly safely under disturbances (i.e., external forces and wind disturbances)
-* Navigate autonomously in dense woods
-
-## 2 Prerequisited
-
-### 2.1 Ubuntu and ROS
-
-Ubuntu 18.04~20.04, [ROS Installation](http://wiki.ros.org/ROS/Installation)
-
-### 2.2 PCL Eigen and fmt
-
-PCL >= 1.6, follow [PCL Installation](https://pointclouds.org)
-
-Eigen >= 3.3.4, follow [Eigen Installation](https://eigen.tuxfamily.org/index.php?title=Main_Page)
-
-fmt: Download fmt.zip at https://github.com/hku-mars/IPC/releases/tag/v0.1.
-
-Build and install by:
-
-```bash
-mkdir build
-cd build/
-cmake -DBUILD_SHARED_LIBS=TRUE ..
-make
-sudo make install
-sudo cp /usr/local/lib/libfmt.so.8 /usr/lib
-```
-
-### 2.3 OSQP and OSQP-Eigen
-
-* [osqp-github](https://github.com/osqp/osqp)
-* [osqp-document](https://osqp.org/docs/get_started/sources.html)
-
-Install OSQP (please selete the version less than [0.6.3](https://github.com/osqp/osqp/releases/tag/v0.6.3))
-```
-git clone --recursive https://github.com/osqp/osqp
-cd osqp
-mkdir build
-cd build
-cmake ..
-sudo make install
-```
-
-* [osqp-eigen-github](https://github.com/robotology/osqp-eigen)
-
-Install OSQP-Eigen
-```
-git clone https://github.com/robotology/osqp-eigen.git
-cd osqp-eigen
-mkdir build
-cd build
-cmake ..
-sudo make
-sudo make install
-```
-
-### 2.4 Other
-
-A debug tool: *backward.cpp*
-
-Installation
-```
-sudo apt-get install libdw-dev
-wget https://raw.githubusercontent.com/bombela/backward-cpp/master/backward.hpp
-sudo mv backward.hpp /usr/include
-```
-
-## 3 Make
-
-```
-mkdir -p IPC_ws/src
-cd IPC_ws/src
-git clone https://github.com/hku-mars/IPC.git
-cd ..
+cd ~/your_workspace
 catkin_make
-```
+🚀 运行与飞行指南
+1. 环境初始化
+sh shflies/ready.sh
+2. 启动控制器
 
-## 4 Run and test
+等待终端出现类似 “校准完成” 提示：
 
-(1) Navigate autonomously in a simulated environment in the woods 
+roslaunch px4ctrl run_ctrl.launch
+3. 启动 IPC 规划器
+roslaunch ipc ipc_real.launch
+4. 切入 Offboard 模式
+使用遥控器切换到 Offboard
+终端确认：
+✅ “已切换到位置模式”
+5. 一键起飞逻辑
 
-run ipc
-```
-source devel/setup.bash
-roslaunch ipc ipc.launch
-```
+操作步骤：
 
-run MARSIM simulator
-```
-source devel/setup.bash
-roslaunch test_interface map_rc.launch
-```
+解锁（内八 / 拨杆）
+油门推满 → 立即回中
 
-Then click on the `3D goal` of `rviz` to select the target 
+说明：
 
-(2) Benchmark: Avoid suddenly appearing object (**Ideal simulation**)
+检测到油门超过阈值后：
+自动起飞
+悬停至 1.2 m
+6. 自主导航飞行
+打开 RViz
+使用 2D Nav Goal 打点
+无人机将：
+自动规划轨迹
+飞向目标点
+🔧 实用工具
+提高 MAVROS 里程计频率
+rosrun mavros mavcmd long 511 32 5000 0 0 0 0 0
 
-run ipc
-```
-source devel/setup.bash
-roslaunch ipc ipc_avoid.launch
-```
+👉 作用：
 
-run simulator
-```
-source devel/setup.bash
-roslaunch ipc fast_avoid.launch
-```
+提升 PX4 → MAVROS 回传频率
+提高 MPC 状态反馈质量
+
+💡 本项目 sh 脚本已内置该命令
